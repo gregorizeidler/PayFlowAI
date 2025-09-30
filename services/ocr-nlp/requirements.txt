@@ -1,0 +1,29 @@
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pika==1.3.2
+minio==7.2.0
+python-dotenv==1.0.0
+pydantic==2.5.0
+pydantic-settings==2.1.0
+
+# OCR Dependencies
+pytesseract==0.3.10
+Pillow==10.1.0
+opencv-python==4.8.1.78
+pdf2image==1.16.3
+
+# NLP Dependencies
+spacy==3.7.2
+spacy-transformers==1.3.4
+
+# Image Processing
+numpy==1.24.3
+scikit-image==0.22.0
+
+# Brazilian NLP
+https://github.com/explosion/spacy-models/releases/download/pt_core_news_sm-3.7.0/pt_core_news_sm-3.7.0-py3-none-any.whl
+
+# Utilities
+python-multipart==0.0.6
+aiofiles==23.2.1
+httpx==0.25.2

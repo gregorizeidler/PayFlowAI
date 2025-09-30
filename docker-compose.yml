@@ -1,0 +1,215 @@
+version: '3.8'
+
+services:
+  # Database
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-financial_automation}
+      POSTGRES_USER: ${POSTGRES_USER:-dev_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - financial_network
+
+  # Redis for caching and sessions
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    networks:
+      - financial_network
+
+  # RabbitMQ for message queuing
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-dev_user}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    ports:
+      - "5672:5672"
+      - "15672:15672"  # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - financial_network
+
+  # MinIO (S3-compatible storage for development)
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_USER:-dev_user}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - financial_network
+
+  # Core API Service
+  core-api:
+    build:
+      context: ./services/core-api
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-dev_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-financial_automation}
+      - REDIS_URL=redis://redis:6379
+      - RABBITMQ_URL=amqp://${RABBITMQ_USER:-dev_user}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_USER:-dev_user}
+      - MINIO_SECRET_KEY=${MINIO_PASSWORD}
+    depends_on:
+      - postgres
+      - redis
+      - rabbitmq
+      - minio
+    volumes:
+      - ./services/core-api:/app
+    networks:
+      - financial_network
+    restart: unless-stopped
+
+  # Document Ingestion Service
+  document-ingestion:
+    build:
+      context: ./services/document-ingestion
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8000"
+    environment:
+      - RABBITMQ_URL=amqp://${RABBITMQ_USER:-dev_user}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_USER:-dev_user}
+      - MINIO_SECRET_KEY=${MINIO_PASSWORD}
+    depends_on:
+      - rabbitmq
+      - minio
+    volumes:
+      - ./services/document-ingestion:/app
+    networks:
+      - financial_network
+    restart: unless-stopped
+
+  # OCR/NLP Processing Service
+  ocr-nlp:
+    build:
+      context: ./services/ocr-nlp
+      dockerfile: Dockerfile
+    environment:
+      - RABBITMQ_URL=amqp://${RABBITMQ_USER:-dev_user}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_USER:-dev_user}
+      - MINIO_SECRET_KEY=${MINIO_PASSWORD}
+    depends_on:
+      - rabbitmq
+      - minio
+    volumes:
+      - ./services/ocr-nlp:/app
+    networks:
+      - financial_network
+    restart: unless-stopped
+    deploy:
+      replicas: 2  # Multiple workers for OCR processing
+
+  # AP Workflow Service
+  ap-workflow:
+    build:
+      context: ./services/ap-workflow
+      dockerfile: Dockerfile
+    ports:
+      - "8002:8000"
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-dev_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-financial_automation}
+      - RABBITMQ_URL=amqp://${RABBITMQ_USER:-dev_user}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
+      - REDIS_URL=redis://redis:6379
+      - CORE_API_URL=http://core-api:8000
+    depends_on:
+      - postgres
+      - rabbitmq
+      - redis
+      - core-api
+    volumes:
+      - ./services/ap-workflow:/app
+    networks:
+      - financial_network
+    restart: unless-stopped
+
+  # AR Workflow Service
+  ar-workflow:
+    build:
+      context: ./services/ar-workflow
+      dockerfile: Dockerfile
+    ports:
+      - "8003:8001"
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-dev_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-financial_automation}
+      - RABBITMQ_URL=amqp://${RABBITMQ_USER:-dev_user}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
+      - REDIS_URL=redis://redis:6379
+      - CORE_API_URL=http://core-api:8000
+    depends_on:
+      - postgres
+      - rabbitmq
+      - redis
+      - core-api
+    volumes:
+      - ./services/ar-workflow:/app
+    networks:
+      - financial_network
+    restart: unless-stopped
+
+  # Reconciliation Service
+  reconciliation:
+    build:
+      context: ./services/reconciliation
+      dockerfile: Dockerfile
+    ports:
+      - "8004:8002"
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-dev_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-financial_automation}
+      - RABBITMQ_URL=amqp://${RABBITMQ_USER:-dev_user}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
+      - REDIS_URL=redis://redis:6379
+      - CORE_API_URL=http://core-api:8000
+    depends_on:
+      - postgres
+      - rabbitmq
+      - redis
+      - core-api
+    volumes:
+      - ./services/reconciliation:/app
+    networks:
+      - financial_network
+    restart: unless-stopped
+
+  # Frontend React Application
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3005:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - financial_network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  rabbitmq_data:
+  minio_data:
+
+networks:
+  financial_network:
+    driver: bridge
