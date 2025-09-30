@@ -5,7 +5,7 @@
 **PayFlow** é um **sistema completo de automação financeira empresarial** que implementa soluções avançadas para gestão de contas a pagar e receber. O objetivo é showcasing de habilidades avançadas em:
    
 - **🤖 Inteligência Artificial** (OCR + NLP)
-- **🏗️ Arquitetura de Microsserviços**
+- **🏗️ Arquitetura de Microsserviços** 
 - **⚡ Processamento Assíncrono de Dados**
 - **🌐 Sistemas Distribuídos**
 - **🔗 Integração de APIs**
